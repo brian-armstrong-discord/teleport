@@ -25,19 +25,21 @@ func main() {
 	eventData := []EventData{}
 
 	s := token.NewFileSet()
-	filepath.Walk(path.Join("..", ".."), func(pth string, i fs.FileInfo, err error) error {
+	if err := filepath.Walk(path.Join("..", ".."), func(pth string, i fs.FileInfo, _ error) error {
 		if !strings.HasSuffix(i.Name(), ".go") {
 			return nil
 		}
-		f, err := parser.ParseFile(s, pth, nil, 0)
+		f, err := parser.ParseFile(s, pth, nil, parser.ParseComments)
 		if err != nil {
-			// TODO: Replace with proper logger call
 			fmt.Fprintf(os.Stderr, "error parsing Go source files: %v", err)
 			os.Exit(1)
 		}
 		gofiles = append(gofiles, f)
 		return nil
-	})
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "error walking gravitational/teleport: %v", err)
+		os.Exit(1)
+	}
 
 	// First walk through the AST: collect types of audit events.
 	// We identify audit event types by instances where a field named
@@ -75,7 +77,6 @@ func main() {
 									if !ok {
 										continue
 									}
-									fmt.Println("assigning an event type")
 									eventTypes[elkvv.Sel.Name] = struct{}{}
 								}
 							}
@@ -102,12 +103,14 @@ func main() {
 				}
 				for _, n := range val.Names {
 					if _, y := eventTypes[n.Name]; y {
-						// TODO: Add information re: the event type
-						// to the eventData slice.
-						fmt.Println("yay a match for: " + n.Name)
+						tx := val.Doc.Text()
+						typ := strings.ReplaceAll(val.Values[0].(*ast.BasicLit).Value, "\"", "`")
+						if strings.HasPrefix(tx, n.Name) {
+							tx = strings.ReplaceAll(tx, n.Name, typ)
+						}
 						eventData = append(eventData, EventData{
-							Name:    val.Values[0].(*ast.BasicLit).Value,
-							Comment: val.Comment.Text(),
+							Name:    typ,
+							Comment: tx,
 						})
 					}
 				}
@@ -115,6 +118,5 @@ func main() {
 			}, nil)
 		}
 	}
-
 	fmt.Println(eventData)
 }
