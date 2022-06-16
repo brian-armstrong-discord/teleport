@@ -1,14 +1,10 @@
-package main
+package auditevents
 
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/fs"
+	"io"
 	"os"
-	"path"
-	"path/filepath"
 	"strings"
 	"text/template"
 
@@ -28,27 +24,11 @@ var tmpl string = `|Event Type|Description|
 {{- end }}
 `
 
-func main() {
+// GenerateAuditEventsTable writes a table of Teleport audit events to out
+// based on the parsed Go source files in gofiles.
+func GenerateAuditEventsTable(out io.Writer, gofiles []*ast.File) error {
 	eventTypes := make(map[string]struct{})
-	gofiles := []*ast.File{}
 	eventData := []EventData{}
-
-	// Parse Go source files
-	if err := filepath.Walk(path.Join("..", ".."), func(pth string, i fs.FileInfo, _ error) error {
-		if !strings.HasSuffix(i.Name(), ".go") {
-			return nil
-		}
-		f, err := parser.ParseFile(token.NewFileSet(), pth, nil, parser.ParseComments)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error parsing Go source files: %v", err)
-			os.Exit(1)
-		}
-		gofiles = append(gofiles, f)
-		return nil
-	}); err != nil {
-		fmt.Fprintf(os.Stderr, "error walking gravitational/teleport: %v", err)
-		os.Exit(1)
-	}
 
 	// We will traverse the AST of each Go file twice: once to collect types of
 	// audit events that are used in apievents.Metadata declarations, and
@@ -152,8 +132,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error parsing the audit event reference template: %v", err)
 		os.Exit(1)
 	}
-	if err := tt.Execute(os.Stdout, eventData); err != nil {
-		fmt.Fprintf(os.Stderr, "error executing the audit event reference template: %v", err)
-		os.Exit(1)
+	if err := tt.Execute(out, eventData); err != nil {
+		return fmt.Errorf("error executing the audit event reference template: %v", err)
 	}
+	return nil
 }
